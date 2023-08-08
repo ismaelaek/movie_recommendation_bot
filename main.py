@@ -13,7 +13,7 @@ email = config('email')
 owner_name = config('owner_name')
 GitHub = config('GitHub')
 
-# get all availables genres and store thme in a variable later 
+# get all availables genres and store them in a variable later 
 def get_all_genres():
     url = f"https://api.themoviedb.org/3/genre/movie/list?api_key={api_key}"
     response = requests.get(url)
