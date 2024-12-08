@@ -1,140 +1,195 @@
 import requests
 import random
-import telebot 
+import telebot
 from telebot import types
 from decouple import config
 from googletrans import Translator
-import os
+import time
 
-translator = Translator()
-
-# the following variables are stored in a ".env " file 
-api_key = config('API_KEY')
-bot_username = config('BOT_USERNAME')
-bot_token = config('BOT_TOKEN')
+# Load environment variables
+api_key = config("API_KEY")
+bot_token = config("BOT_TOKEN")
+bot = telebot.TeleBot(bot_token)
 email = config('EMAIL')
 owner_name = config('OWNER_NAME')
-GitHub = config('GITHUB')
+github = config('GITHUB')
 
-# get all available genres and store them in a variable later
+
+# Retry decorator for robust error handling
+def retry_on_exception(func):
+    def wrapper(*args, **kwargs):
+        retries = 5
+        while retries > 0:
+            try:
+                return func(*args, **kwargs)
+            except requests.exceptions.RequestException as e:
+                retries -= 1
+                print(f"Network error: {e}. Retrying... {retries} retries left.")
+                time.sleep(2)  # Wait before retrying
+            except Exception as e:
+                print(f"Unexpected error: {e}. Exiting.")
+                break
+        return None
+
+    return wrapper
+
+
+# Function to fetch all genres with retry logic
+@retry_on_exception
 def get_all_genres():
     url = f"https://api.themoviedb.org/3/genre/movie/list?api_key={api_key}"
     response = requests.get(url)
+    response.raise_for_status()
     data = response.json()
-    genres = {genre['name'] : genre['id'] for genre in data['genres']}
-    return genres
+    return {genre["name"]: genre["id"] for genre in data["genres"]}
 
-all_genres = get_all_genres()
-# set a mood for each genre 
-# it's much easier to make only one dictionary
-moods = [
-    {"Excited": "Adventure"},
-    {"Thrilled": "Science Fiction"},
-    {"Enchanting": "Fantasy"},
-    {"Hilarious": "Comedy"},
-    {"Intrigued": "Mystery"},
-    {"Enlightened": "Documentary"},
-    {"Thoughtful": "Drama"},
-    {"Joyful": "Family"},
-    {"Imaginative": "Animation"},
-    {"Fascinated": "History"},
-    {"Scared": "Comedy"},
-    {"Melodious": "Music"},
-    {"Curious": "Documentary"},
-    {"Romantic": "Romance"},
-    {"Wondrous": "Fantasy"},
-    {"Entertained": "Action"},
-    {"Intense": "Drama"},
-    {"Heroic": "War"},
-    {"Adventurous": "Western"},
-    {"Sad": "Comedy"}
-]
 
-###############
-# handle commands 
-
-bot = telebot.TeleBot(bot_token)
-@bot.message_handler(commands=['start'])
+# Handle commands
+@bot.message_handler(commands=["start"])
 def start(message):
-    bot.send_message(message.chat.id, "Welcome to Movie Recommender bot \n\n /help for help ")
+    start_message = """
+🎥 **Welcome to the Ultimate Movie Recommender Bot!** 🎬  
+Your personal guide to discovering amazing movies tailored to your mood! 🌟  
 
-@bot.message_handler(commands=['help'])
-def start(message):
-    help_content = "send or press /mood to choose your current mood \nsend or press /contact to contact the owner"
-    bot.send_message(message.chat.id, help_content)
+✨ **Available Commands:**  
+- /start - Get started with the bot
+- /mood - Choose your current mood for personalized recommendations  
+- /contact - Get in touch with the bot's creator  
 
-@bot.message_handler(commands=['contact'])
-def handle_contact(message):
-    info = f"""
-Name: {owner_name}
-Email: {email} 
-GitHub: {GitHub} 
+💡 **Exciting News:**  
+🔗 **Free direct links to watch movies are coming soon!** Stay tuned for this awesome feature. 🎉  
+
+🎭 **Let the movie magic begin!**  
     """
-    bot.send_message(chat_id=message.chat.id, text=info)
+    bot.send_message(message.chat.id, start_message, parse_mode="Markdown")
 
-@bot.message_handler(commands=['mood'])
+
+@bot.message_handler(commands=["mood"])
 def choose_mood(message):
-    # Create a menu keyboard
     keyboard = types.InlineKeyboardMarkup(row_width=3)
-    
-    # Add buttons for each mood
-    for mood in moods:
-        current_mood = list(mood.keys())[0]
-        selected_genre = mood[current_mood]
-        button = types.InlineKeyboardButton(text=current_mood, callback_data=selected_genre)
-        keyboard.add(button)
-    
-    # Send the menu message
-    bot.send_message(chat_id=message.chat.id, text="Choose your mood :", reply_markup=keyboard)
+    moods = {
+        "🎢 Excited": "Adventure",
+        "🚀 Thrilled": "Science Fiction",
+        "🪄 Enchanting": "Fantasy",
+        "😂 Hilarious": "Comedy",
+        "🕵️ Intrigued": "Mystery",
+        "📚 Enlightened": "Documentary",
+        "🤔 Thoughtful": "Drama",
+        "👨‍👩‍👧 Joyful": "Family",
+        "🎨 Imaginative": "Animation",
+        "🏰 Fascinated": "History",
+        "😨 Scared": "Comedy",
+        "🎵 Melodious": "Music",
+        "🔍 Curious": "Documentary",
+        "❤️ Romantic": "Romance",
+        "🌌 Wondrous": "Fantasy",
+        "🔥 Entertained": "Action",
+        "🌟 Intense": "Drama",
+        "🛡️ Heroic": "War",
+        "🏜️ Adventurous": "Western",
+        "😢 Sad": "Comedy",
+    }
 
-# Handle button clicks
+    buttons = [types.InlineKeyboardButton(text=mood, callback_data=genre) for mood, genre in moods.items()]
+    keyboard.add(*buttons)
+
+    bot.send_message(
+        message.chat.id,
+        "🎭 Choose your current mood:",
+        reply_markup=keyboard,
+    )
+
+
+# Contact command
+@bot.message_handler(commands=['contact'])
+def contact_info(message):
+    bot.send_message(
+        message.chat.id,
+        f"👤 **Owner Information:**\n\n"
+        f"👨‍💻 Name: `{owner_name}`\n"
+        f"📧 Email: `{email}`\n"
+        f"🔗 GitHub: [View Profile]({github})\n\n"
+        f"☕ **Enjoying the bot?**\n"
+        f"Show your support by buying me a coffee! Your support helps me keep improving this bot and building more cool projects. Every coffee counts! \n"
+        f"[Buy Me a Coffee](https://buymeacoffee.com/ismail_aek)\n",
+        parse_mode="Markdown"
+    )
+
+
 @bot.callback_query_handler(func=lambda call: True)
-def button_click(call):
-    
-    selected_genre = call.data.strip()
-    bot.send_message(chat_id=call.message.chat.id, text=f"we have chosen {selected_genre} movies/series for your current mood !")
-    
-    # get id of selected genre
-    genre_id = all_genres.get(selected_genre)
-    
-    # make a request to TMDb to return movies depends on chosen mood
-    if genre_id:
-        response = requests.get(f'https://api.themoviedb.org/3/discover/movie', params={
-            'api_key': {api_key},
-            'with_genres': {genre_id},
-            'sort_by': 'popularity.desc',
-            'page': 1
-        }).json()
-        movies = response['results']
-        sorted_movies = sorted(movies, key=lambda x: x['popularity'], reverse=True)
-        
-        # make a list of top 20 movie and choose a random one
-        top_movies = sorted_movies[:20]
-        print(top_movies)
-        random_movie = random.choice(top_movies)
+@retry_on_exception
+def handle_callback(call):
+    genre = call.data
+    bot.send_message(call.message.chat.id, f"You selected {genre}. Fetching recommendations...")
 
-        # extracting selected movie's info
-        title = random_movie['title']
-        poster_path = random_movie['poster_path']
-        overview = random_movie['overview']
-        arabic_overview = translator.translate(overview, src='en', dest='ar')
-        rating = random_movie['vote_average']
-        img_url='https://image.tmdb.org/t/p/original' + poster_path
-        
-        # I have a problem sending photo by url, so I had to make the program download the poster and send it then delete it
-        photo_data = requests.get(img_url)
-        photo_filename = 'photo.jpg'
-        with open(photo_filename, 'wb') as photo_file:
-            photo_file.write(photo_data.content)
+    genre_id = get_all_genres().get(genre, None)
+    if not genre_id:
+        bot.send_message(call.message.chat.id, "Sorry, no movies found for this genre.")
+        return
 
-        with open(photo_filename, 'rb') as photo_file:
-            bot.send_photo(chat_id=call.message.chat.id, photo=photo_file)
+    # Fetch movies for the genre
+    url = f"https://api.themoviedb.org/3/discover/movie"
+    params = {
+        "api_key": api_key,
+        "with_genres": genre_id,
+        "sort_by": "popularity.desc",
+        "page": 1,
+    }
+    response = requests.get(url, params=params).json()
+    movies = response.get("results", [])
+    if not movies:
+        bot.send_message(call.message.chat.id, "No popular movies found in this genre. Try another mood!")
+        return
 
-        # Delete the downloaded photo file
-        os.remove(photo_filename)
-        
-        caption=f' **{title}** \n\nRating: {rating}\n\nOverview: {overview}\n\nبالعربية: {arabic_overview.text}'
-        bot.send_message(chat_id=call.message.chat.id, text=caption)
+    # Select a random movie and send the details
+    random_movie = random.choice(movies)
+    movie_id = random_movie["id"]
+    title = random_movie["title"]
+    overview = random_movie["overview"]
+    rating = random_movie["vote_average"]
+    poster_path = random_movie["poster_path"]
+    img_url = f"https://image.tmdb.org/t/p/original{poster_path}"
 
-# start the bot 
-bot.polling()
+    translator = Translator()
+    arabic_overview = translator.translate(overview, src='en', dest='ar').text
+
+    # Fetch trailer from TMDb
+    trailer_url = f"https://api.themoviedb.org/3/movie/{movie_id}/videos?api_key={api_key}"
+    trailer_response = requests.get(trailer_url).json()
+    trailer_key = None
+    for video in trailer_response.get("results", []):
+        if video["type"] == "Trailer" and video["site"] == "YouTube":
+            trailer_key = video["key"]
+            break
+
+    # Construct caption
+    caption = (
+        f"🎥 **{title}**\n\n"
+        f"⭐️ Rating: `{rating}`\n\n"
+        f"📝 Overview:\n{overview}\n\n"
+        f"🇲🇦 Arabic:\n{arabic_overview}\n\n"
+        f"📖 More Details: [View details](https://www.themoviedb.org/movie/{movie_id})\n\n"
+    )
+
+    # Create an inline keyboard with a "Watch Trailer" button (if available)
+    keyboard = types.InlineKeyboardMarkup()
+    if trailer_key:
+        youtube_link = f"https://www.youtube.com/watch?v={trailer_key}"
+        keyboard.add(types.InlineKeyboardButton("🎥 Watch Trailer", url=youtube_link))
+    else:
+        caption += "🚫 Trailer not available.\n\n"
+
+    bot.send_photo(call.message.chat.id, img_url, caption=caption, parse_mode="Markdown", reply_markup=keyboard)
+
+
+# Start polling with error handling
+while True:
+    try:
+        print("Bot is running...")
+        bot.polling(non_stop=True)
+    except requests.exceptions.ReadTimeout:
+        print("Timeout error. Retrying...")
+        time.sleep(5)
+    except Exception as e:
+        print(f"Unexpected error: {e}. Retrying in 5 seconds...")
+        time.sleep(5)
